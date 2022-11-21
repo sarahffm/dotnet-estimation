@@ -13,7 +13,7 @@ namespace Devon4Net.Application.WebAPI.Implementation.Business.SessionManagement
     /// <summary>
     /// Session service implementation
     /// </summary>
-    public class SessionService: ISessionService
+    public class SessionService : ISessionService
     {
         private readonly ILiteDbRepository<Session> _sessionRepository;
 
@@ -21,7 +21,7 @@ namespace Devon4Net.Application.WebAPI.Implementation.Business.SessionManagement
         /// Constructor
         /// </summary>
         /// <param name="SessionRepository"></param>
-        public SessionService(ILiteDbRepository<Session> SessionRepository) 
+        public SessionService(ILiteDbRepository<Session> SessionRepository)
         {
             _sessionRepository = SessionRepository;
         }
@@ -36,14 +36,15 @@ namespace Devon4Net.Application.WebAPI.Implementation.Business.SessionManagement
             {
                 throw new InvalidExpiryDateException();
             }
-            return _sessionRepository.Create(new Session{
+            return _sessionRepository.Create(new Session
+            {
                 InviteToken = generateInviteToken(),
                 ExpiresAt = sessionDto.ExpiresAt,
                 Tasks = new List<Domain.Entities.Task>(),
                 Users = new List<Domain.Entities.User>()
             });
         }
-        
+
         public async Task<Session> GetSession(long id)
         {
             var expression = LiteDB.Query.EQ("_id", id);
@@ -51,7 +52,7 @@ namespace Devon4Net.Application.WebAPI.Implementation.Business.SessionManagement
             // FIXME: LiteDb also returs null values, when a matching entity does not exist!
             return _sessionRepository.GetFirstOrDefault(expression);
         }
-        
+
         public async Task<bool> InvalidateSession(long sessionId)
         {
             Session sessionResult = await GetSession(sessionId);
@@ -70,7 +71,7 @@ namespace Devon4Net.Application.WebAPI.Implementation.Business.SessionManagement
 
             return _sessionRepository.Update(sessionResult);
         }
-        
+
         public async Task<(bool, Domain.Entities.Task?)> GetStatus(long sessionId)
         {
             var sessionResult = await GetSession(sessionId);
@@ -124,7 +125,7 @@ namespace Devon4Net.Application.WebAPI.Implementation.Business.SessionManagement
 
             return (sessionIsValid, null);
         }
-        public async Task<Estimation> AddNewEstimation(long sessionId , string voteBy, int complexity)
+        public async Task<Estimation> AddNewEstimation(long sessionId, string voteBy, int complexity)
         {
             var (isvalid, currentTask) = await GetStatus(sessionId);
             if (!isvalid)
@@ -157,10 +158,12 @@ namespace Devon4Net.Application.WebAPI.Implementation.Business.SessionManagement
             var expression = LiteDB.Query.EQ("_id", sessionId);
             var session = _sessionRepository.GetFirstOrDefault(expression);
 
-            if(session != null) {
+            if (session != null)
+            {
                 var user = session.Users.SingleOrDefault(i => i.Id == userId);
 
-                if (user != null) {
+                if (user != null)
+                {
                     session.Users.Remove(user);
                     _sessionRepository.Update(session);
                     return true;
@@ -198,16 +201,16 @@ namespace Devon4Net.Application.WebAPI.Implementation.Business.SessionManagement
         }
         public async Task<bool> AddTaskToSession(long sessionId, TaskDto task)
         {
-           /* var newSession = new Session
-            {
-                Id = 1,
-                InviteToken = "asdf",
-                ExpiresAt = DateTime.Now.AddMinutes(25),
-                Tasks = new List<Domain.Entities.Task>(),
-                Users = new List<Domain.Entities.User>(),
-            };
-            _sessionRepository.Create(newSession);
-           */
+            /* var newSession = new Session
+             {
+                 Id = 1,
+                 InviteToken = "asdf",
+                 ExpiresAt = DateTime.Now.AddMinutes(25),
+                 Tasks = new List<Domain.Entities.Task>(),
+                 Users = new List<Domain.Entities.User>(),
+             };
+             _sessionRepository.Create(newSession);
+            */
             var expression = LiteDB.Query.EQ("_id", sessionId);
             var session = _sessionRepository.GetFirstOrDefault(expression);
             var (id, title, description, url, status) = task;
@@ -231,6 +234,33 @@ namespace Devon4Net.Application.WebAPI.Implementation.Business.SessionManagement
                 }
             }
             return false;
+        }
+
+        /// <summary>
+        /// Delete a Task
+        /// </summary>
+        /// <param name="sessionId"></param>
+        /// <param name="taskId"></param>
+        /// <returns></returns>
+        public async Task<bool> DeleteTask(long sessionId, string taskId)
+        {
+            var session = await GetSession(sessionId);
+
+            if (session == null)
+            {
+                throw new NotFoundException(sessionId);
+            }
+
+            var task = session.Tasks.ToList().Find(item => item.Id == taskId);
+
+            if (task == null)
+            {
+                throw new TaskNotFoundException(taskId);
+            }
+
+            session.Tasks.Remove(task);
+
+            return _sessionRepository.Update(session);
         }
 
         private string generateInviteToken()

@@ -24,19 +24,19 @@ namespace Devon4Net.Application.WebAPI.Implementation.Business.SessionManagement
     [ApiController]
     [Route("[controller]")]
     [EnableCors("CorsPolicy")]
-    
-    public class SessionController: ControllerBase
+
+    public class SessionController : ControllerBase
     {
         private readonly ISessionService _sessionService;
         private readonly IWebSocketHandler _webSocketHandler;
-        
+
         public SessionController(ISessionService SessionService, IWebSocketHandler webSocketHandler)
         {
             _sessionService = SessionService;
             _webSocketHandler = webSocketHandler;
         }
-        
-        
+
+
 
         /// <summary>
         /// Creates a session
@@ -54,6 +54,7 @@ namespace Devon4Net.Application.WebAPI.Implementation.Business.SessionManagement
             var result = await _sessionService.CreateSession(sessionDto);
             return StatusCode(StatusCodes.Status200OK, LiteDB.JsonSerializer.Serialize(result));
         }
+
         [HttpPut]
         [AllowAnonymous]
         [ProducesResponseType(typeof(bool), StatusCodes.Status200OK)]
@@ -61,13 +62,13 @@ namespace Devon4Net.Application.WebAPI.Implementation.Business.SessionManagement
         [ProducesResponseType(StatusCodes.Status404NotFound)]
         [ProducesResponseType(StatusCodes.Status500InternalServerError)]
         [Route("/estimation/v1/session/{id:long}/invalidate")]
-        public async Task<IActionResult> InvalidateSession(long id)
+        public async Task<IActionResult> InvalidateSession(long sessionId)
         {
-            Devon4NetLogger.Debug($"Put-Request to invalidate session with id: {id}");
+            Devon4NetLogger.Debug($"Put-Request to invalidate session with id: {sessionId}");
 
             try
             {
-                return Ok(await _sessionService.InvalidateSession(id));
+                return Ok(await _sessionService.InvalidateSession(sessionId));
             }
             catch (Exception exception)
             {
@@ -134,14 +135,13 @@ namespace Devon4Net.Application.WebAPI.Implementation.Business.SessionManagement
             return StatusCode(StatusCodes.Status201Created, result);
         }
 
-
         [HttpPost]
         [ProducesResponseType(StatusCodes.Status201Created)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
         [ProducesResponseType(StatusCodes.Status500InternalServerError)]
         [Route("/estimation/v1/session/{sessionId:long}/task")]
-        public async Task<ActionResult> AddTask(long sessionId, [FromBody]TaskDto task)
+        public async Task<ActionResult> AddTask(long sessionId, [FromBody] TaskDto task)
         {
             var finished = await _sessionService.AddTaskToSession(sessionId, task);
 
@@ -157,6 +157,31 @@ namespace Devon4Net.Application.WebAPI.Implementation.Business.SessionManagement
             }
             return BadRequest();
         }
+
+        [HttpDelete]
+        [ProducesResponseType(typeof(bool), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+        [Route("/estimation/v1/session/{sessionId:long}/task/{taskId:long}")]
+        public async Task<ActionResult> DeleteTask(long sessionId, string taskId)
+        {
+            Devon4NetLogger.Debug($"Delete-Request to delete task with id: {taskId} from session with id: {sessionId}");
+
+            try
+            {
+                return Ok(await _sessionService.DeleteTask(sessionId, taskId));
+            }
+            catch (Exception exception)
+            {
+                return exception switch
+                {
+                    NotFoundException or TaskNotFoundException => NotFound(),
+                    _ => StatusCode(500)
+                };
+            }
+        }
+
         /// <summary>
         /// Add a Session Esstimation 
         /// </summary>
