@@ -12,6 +12,7 @@ using System.Net;
 using Task = System.Threading.Tasks.Task;
 using System.Net.WebSockets;
 using LiteDB;
+using Microsoft.Extensions.Localization;
 
 namespace Devon4Net.Application.WebAPI.Implementation.Business.SessionManagement.Controllers
 {
@@ -167,7 +168,20 @@ namespace Devon4Net.Application.WebAPI.Implementation.Business.SessionManagement
 
             try
             {
-                return Ok(await _sessionService.DeleteTask(sessionId, taskId));
+                var finished = await _sessionService.DeleteTask(sessionId, taskId);
+
+                if (finished)
+                {
+                    Message<string> message = new Message<string>
+                    {
+                        Type = MessageType.TaskDeleted,
+                        Payload = taskId
+                    };
+                    await _webSocketHandler.Send(message, sessionId);
+                    return Ok();
+                }
+
+                return BadRequest();
             }
             catch (Exception exception)
             {
@@ -189,7 +203,6 @@ namespace Devon4Net.Application.WebAPI.Implementation.Business.SessionManagement
         [ProducesResponseType(StatusCodes.Status404NotFound)]
         [ProducesResponseType(StatusCodes.Status500InternalServerError)]
         [Route("/estimation/v1/session/{sessionId:long}/estimation")]
-
         public async Task<ActionResult<EstimationDto>> AddNewEstimation(long sessionId, EstimationDto estimationDto)
         {
             Devon4NetLogger.Debug("Executing AddNewEstimation from controller SessionController");
