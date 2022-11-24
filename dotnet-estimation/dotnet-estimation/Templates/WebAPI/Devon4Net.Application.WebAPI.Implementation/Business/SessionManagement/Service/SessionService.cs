@@ -7,6 +7,7 @@ using Devon4Net.Application.WebAPI.Implementation.Business.SessionManagement.Exc
 using Devon4Net.Application.WebAPI.Implementation.Business.SessionManagement.Dtos;
 using System.Security.Cryptography;
 using LiteDB;
+using Devon4Net.Application.WebAPI.Implementation.Business.SessionManagement.Converters;
 
 namespace Devon4Net.Application.WebAPI.Implementation.Business.SessionManagement.Service
 {
@@ -72,87 +73,52 @@ namespace Devon4Net.Application.WebAPI.Implementation.Business.SessionManagement
             return _sessionRepository.Update(sessionResult);
         }
 
-        public async Task<(bool, Domain.Entities.Task?)> GetStatus(long sessionId)
+        public async Task<(bool, List<Domain.Entities.Task>)> GetStatus(long sessionId)
         {
-            var sessionResult = await GetSession(sessionId);
+            var entity = await GetSession(sessionId);
 
-            if (sessionResult == null)
+            if (entity == null)
             {
                 throw new NotFoundException(sessionId);
             }
 
-            bool sessionIsValid = sessionResult.IsValid();
+            bool sessionIsValid = entity.IsValid();
 
             if (!sessionIsValid)
             {
                 return (false, null);
             }
 
-            // since there can be only one task which is being evaluated,
-            // we only query the first object
-            var evaluatedTask = sessionResult.Tasks.ToList().Find(item => item.Status == Status.Evaluated);
-
-            if (evaluatedTask is not null)
-            {
-                return (sessionIsValid, evaluatedTask);
-            }
-
-            // else we try to find tasks which are open
-            var openTasks = sessionResult.Tasks.Where(item => item.Status == Status.Open).ToList();
-
-            if (openTasks.Any())
-            {
-                openTasks.Sort((x, y) => DateTime.Compare(x.CreatedAt, y.CreatedAt));
-
-                var currentTask = openTasks.First();
-
-                return (sessionIsValid, currentTask);
-            }
-            else
-            {
-                // if there are no open tasks left to be estimated we query for postponed tasks
-                var suspendedTasks = sessionResult.Tasks.Where(item => item.Status == Status.Suspended).ToList();
-
-                suspendedTasks.Sort((x, y) => DateTime.Compare(x.CreatedAt, y.CreatedAt));
-
-                if (suspendedTasks.Any())
-                {
-                    var currentTask = suspendedTasks.First();
-
-                    return (sessionIsValid, currentTask);
-                }
-            }
-
-            return (sessionIsValid, null);
+            return (true, entity.Tasks.ToList());
         }
-        public async Task<Estimation> AddNewEstimation(long sessionId, string voteBy, int complexity)
+
+        public async Task<Estimation> AddNewEstimation(long sessionId, string taskId, string voteBy, int complexity)
         {
-            var (isvalid, currentTask) = await GetStatus(sessionId);
-            if (!isvalid)
+            var session = await GetSession(sessionId);
+
+            if (session is null)
             {
                 throw new NoLongerValid(sessionId);
             }
-            if (currentTask == null)
+
+            var containsTask = session.Tasks.Where(item => item.Id == taskId).Any();
+
+            if (containsTask == false)
             {
                 throw new NoOpenOrSuspendedTask();
             }
 
-            var newEstimation = new Estimation { VoteBy = voteBy, Complexity = complexity };
+            var task = session.Tasks.First(item => item.Id == taskId);
 
-            var session = await GetSession(sessionId);
+            var estimation = new Estimation { VoteBy = voteBy, Complexity = complexity };
 
-            for (int i = 0; i < session.Tasks.Count; i++)
-            {
-                if (session.Tasks[i].Id == currentTask.Id)
-                {
-                    session.Tasks[i].Estimations.Add(newEstimation);
-                }
-            }
+            task.Estimations.Add(estimation);
 
             _sessionRepository.Update(session);
 
-            return newEstimation;
+            return estimation;
         }
+
         public async Task<bool> RemoveUserFromSession(long sessionId, string userId)
         {
             var expression = LiteDB.Query.EQ("_id", sessionId);
@@ -172,6 +138,7 @@ namespace Devon4Net.Application.WebAPI.Implementation.Business.SessionManagement
 
             return false;
         }
+        
         /// <summary>
         /// Add an user to a given session
         /// </summary>
@@ -182,7 +149,9 @@ namespace Devon4Net.Application.WebAPI.Implementation.Business.SessionManagement
         public async Task<bool> AddUserToSession(long sessionId, string userId, Role role)
         {
             var expression = LiteDB.Query.EQ("_id", sessionId);
+            // This is unwanted behaviour.
             var session = _sessionRepository.GetFirstOrDefault(expression);
+
             var newUser = new User
             {
                 Id = userId,
@@ -199,41 +168,35 @@ namespace Devon4Net.Application.WebAPI.Implementation.Business.SessionManagement
             }
             return false;
         }
-        public async Task<bool> AddTaskToSession(long sessionId, TaskDto task)
+        public async Task<(bool, TaskDto)> AddTaskToSession(long sessionId, TaskDto task)
         {
-            /* var newSession = new Session
-             {
-                 Id = 1,
-                 InviteToken = "asdf",
-                 ExpiresAt = DateTime.Now.AddMinutes(25),
-                 Tasks = new List<Domain.Entities.Task>(),
-                 Users = new List<Domain.Entities.User>(),
-             };
-             _sessionRepository.Create(newSession);
-            */
-            var expression = LiteDB.Query.EQ("_id", sessionId);
-            var session = _sessionRepository.GetFirstOrDefault(expression);
-            var (id, title, description, url, status) = task;
+            var session = await GetSession(sessionId);
+
+            var (title, description, url, status) = task;
 
             var newTask = new Domain.Entities.Task
             {
-                Id = id,
+                Id = Guid.NewGuid().ToString(),
                 Title = title,
                 Description = description,
+                Estimations = new List<Estimation>(),
                 Url = url,
-                Status = status
+                Status = Status.Suspended
             };
 
             if (session != null)
             {
-                if (!session.Tasks.Any(x => x.Equals(newTask)))
-                {
-                    session.Tasks.Add(newTask);
+                session.Tasks.Add(newTask);
 
-                    return _sessionRepository.Update(session);
+                var finished = _sessionRepository.Update(session);
+
+                if (finished)
+                {
+                    return (finished, TaskConverter.ModelToDto(newTask));
                 }
             }
-            return false;
+
+            return (false, null);
         }
 
         /// <summary>
@@ -269,6 +232,44 @@ namespace Devon4Net.Application.WebAPI.Implementation.Business.SessionManagement
             RNGCryptoServiceProvider rngCsp = new RNGCryptoServiceProvider();
             rngCsp.GetNonZeroBytes(randomNumber);
             return BitConverter.ToString(randomNumber);
+        }
+
+        public async Task<(bool, List<TaskStatusChangeDto>)> ChangeTaskStatus(long sessionId, TaskStatusChangeDto statusChange)
+        {
+            var session = await GetSession(sessionId);
+
+            var (id, status) = statusChange;
+
+            // if the session could be found and is valid
+            if (session is not null && session.IsValid())
+            {
+                var containsTask = session.Tasks.Where(item => item.Id == id).Any();
+
+                if (!containsTask)
+                {
+                    return (false, new List<TaskStatusChangeDto>());
+                }
+
+                // and it contains the task requested to be chnaged
+                var (modified, taskChanges) = session.ChangeStatusOfTask(id, status);
+
+                if (!modified)
+                {
+                    return (false, new List<TaskStatusChangeDto>());
+                }
+
+                var finished = _sessionRepository.Update(session);
+
+                // and we could properly update the database
+                if (finished)
+                {
+                    var converted = taskChanges.Select<(String id, Status status), TaskStatusChangeDto>(item => new TaskStatusChangeDto { Id = item.id, Status = item.status }).ToList();
+
+                    return (true, converted);
+                }
+            }
+
+            return (false, new List<TaskStatusChangeDto>());
         }
     }
 }

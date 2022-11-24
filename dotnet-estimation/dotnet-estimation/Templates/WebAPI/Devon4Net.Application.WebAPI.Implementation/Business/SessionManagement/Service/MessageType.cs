@@ -9,6 +9,7 @@ namespace Devon4Net.Application.WebAPI.Implementation.Business.SessionManagement
     public enum MessageType
     {
         TaskCreated,
-        TaskDeleted
+        TaskStatusModified,
+        TaskDeleted,
     }
 }

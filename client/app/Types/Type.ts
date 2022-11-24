@@ -1,4 +1,5 @@
 export enum Type {
   TaskCreated = 0,
-  TaskDeleted = 1
+  TaskStatusModified = 1,
+  TaskDeleted = 2
 }
