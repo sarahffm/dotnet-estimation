@@ -32,6 +32,9 @@ export default function Home() {
 
         upsertTask(payload);
       }
+      case Type.TaskDeleted: {
+        console.log("TaskDeleted Message received.");
+      }
       default: {
         break;
       }
@@ -40,12 +43,11 @@ export default function Home() {
 
   const { id } = router.query;
 
-  console.log(id);
-
   const { sendMessage, getWebSocket } = useWebSocket(
     "ws://localhost:8085/" + id + "/ws",
     {
       onOpen: (event: any) => {
+        console.log("Connection open:");
         console.log(event);
       },
       onMessage: (event: WebSocketEventMap["message"]) => processMessage(event),

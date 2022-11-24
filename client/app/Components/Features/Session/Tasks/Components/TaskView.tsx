@@ -5,6 +5,7 @@ import { TaskCreationForm } from "./TaskCreationForm";
 
 export const TaskView: FunctionComponent<{}> = () => {
   const { tasks } = useTaskStore();
+  console.log("tasks:", tasks);
 
   return (
     <>
